@@ -19,7 +19,6 @@ func option2() error {
 	if err := mount.MakeRPrivate("/"); err != nil {
 		return fmt.Errorf("failed to make / private in new mount namespace: %w", err)
 	}
-
 	log.Println("[System Red] Mount marked as private")
 
 	// Unmount special filesystems
@@ -48,23 +47,31 @@ func option2() error {
 	log.Println("[System Red] Remounted /proc")
 
 	// Mount SysFS (With SystemD CGroup)
-	if err := mount.Mount("sysfs", "/sys", "sysfs", "ro"); err != nil {
-		return fmt.Errorf("failed to mount (as rw) /sys: %w", err)
+	if err := mount.Mount("sysfs", "/sys", "sysfs", "rw"); err != nil {
+		return fmt.Errorf("failed to mount /sys: %w", err)
 	}
 	log.Println("[System Red] Remounted /sys")
-	if err := mount.Mount("tmpfs", "/sys/fs/cgroup", "tmpfs", "rw,nosuid,nodev,noexec,mode=755"); err != nil {
-		return fmt.Errorf("failed to mount (as rw) /sys/fs/cgroup: %w", err)
+	if err := mount.Mount("tmpfs", "/sys/fs/cgroup", "tmpfs", ""); err != nil {
+		return fmt.Errorf("failed to mount /sys/fs/cgroup: %w", err)
 	}
 	log.Println("[System Red] Remounted /sys/fs/cgroup")
-	if err := os.MkdirAll("/sys/fs/cgroup/systemd", 0555); err != nil {
+
+	if mounts, mountErr := mount.GetMounts(); mountErr == nil {
+		for _, m := range mounts {
+			log.Printf("[System Red] MOUNTED: %+v", m)
+		}
+	}
+
+	if err := os.MkdirAll("/sys/fs/cgroup/systemd", 0755); err != nil {
 		return fmt.Errorf("failed to create /sys/fs/cgroup/systemd cgroup directory: %w", err)
 	}
 	log.Println("[System Red] Created systemd cgroup directory at /sys/fs/cgroup/systemd")
+	systemd := 0
+	if err := syscall.Mount("cgroup", "/sys/fs/cgroup/systemd", "cgroup", uintptr(systemd), "name=systemd"); err != nil {
+		return fmt.Errorf("failed to mount /sys/fs/cgroup/systemd: %w", err)
+	}
+	log.Println("[System Red] Mounted systemd cgroup /sys/fs/cgroup/systemd")
 
-	// systemDFlags := 0
-	// if err := syscall.Mount("cgroup", "/sys/fs/cgroup/systemd", "cgroup", uintptr(systemDFlags), "rw,nosuid,nodev,noexec,xattr,release_agent=/lib/systemd/systemd-cgroups-agent,name=systemd"); err != nil {
-	// 	return fmt.Errorf("failed to mount /sys/fs/cgroup/systemd: %w", err)
-	// }
 	// if err := mount.Mount("cgroup", "/sys/fs/cgroup/systemd", "cgroup", "rw,nosuid,nodev,noexec,xattr,release_agent=/lib/systemd/systemd-cgroups-agent,name=systemd"); err != nil {
 	// 	return fmt.Errorf("failed to mount /sys/fs/cgroup/systemd: %w", err)
 	// }
@@ -73,10 +80,11 @@ func option2() error {
 	// 	return fmt.Errorf("failed to remount (as ro) /sys/fs/cgroup: %w", err)
 	// }
 	// log.Println("[System Red] Remounted /sys/fs/cgroup ro")
-	// if err := mount.Mount("sysfs", "/sys", "sysfs", "remount,ro"); err != nil {
-	// 	return fmt.Errorf("failed to remount (as ro) /sys: %w", err)
-	// }
-	// log.Println("[System Red] Remounted /sys ro")
+
+	if err := syscall.Mount("", "/sys", "", unix.MS_RDONLY|unix.MS_REMOUNT, ""); err != nil {
+		return fmt.Errorf("failed to mount /sys ro: %w", err)
+	}
+	log.Println("[System Red] Remounted /sys ro")
 
 	// Mount remaining special filesystems
 	if err := mount.Mount("udev", "/dev", "devtmpfs", ""); err != nil {
@@ -87,6 +95,13 @@ func option2() error {
 		return fmt.Errorf("failed to remount /run: %w", err)
 	}
 	log.Println("[System Red] Remounted /run")
+	if err := os.MkdirAll("/run/lock", 1777); err != nil {
+		return fmt.Errorf("failed to create directory /run/lock: %w", err)
+	}
+	if err := mount.Mount("tmpfs", "/run/lock", "tmpfs", ""); err != nil {
+		return fmt.Errorf("failed to remount /run/lock: %w", err)
+	}
+	log.Println("[System Red] Remounted /run/lock")
 
 	return nil
 }

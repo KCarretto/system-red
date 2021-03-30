@@ -15,7 +15,8 @@ const systemRedRoot = "/system_red"
 
 func init() {
 	log.Println("[System Red] Registering Namespace")
-	reexec.Register("/sbin/init", initNamespace)
+	// Register setup to be called from within child namespace
+	reexec.Register("system_red_namespace", initNamespace)
 	if reexec.Init() {
 		os.Exit(0)
 	}
@@ -68,12 +69,20 @@ func run() error {
 	// cmd.Stdin = os.Stdin
 	// cmd.Stdout = os.Stdout
 	// cmd.Stderr = os.Stderr
-	args := []string{"/sbin/init"}
-	env := os.Environ()
+
 	log.Println("[System Red] Entering Container")
-	if err := syscall.Exec("/lib/systemd/systemd", args, env); err != nil {
+
+	args := []string{"/bin/sh"}
+	env := append(os.Environ(), "PS1=Container# ")
+	if err := syscall.Exec("/bin/sh", args, env); err != nil {
 		panic(err)
 	}
+
+	// args := []string{"/sbin/init"}
+	// env := os.Environ()
+	// if err := syscall.Exec("/lib/systemd/systemd", args, env); err != nil {
+	// 	panic(err)
+	// }
 	return nil
 }
 
@@ -84,8 +93,13 @@ func main() {
 	// 	log.Printf("[System Red] failed to create rootfs: %s", err)
 	// 	os.Exit(1)
 	// }
+	if err := os.MkdirAll("/run/youcantseeme", 0555); err != nil {
+		log.Printf("[System Red] [WARN] Failed to create IOC: %w", err)
+	}
+	log.Printf("[System Red] IoC Set")
+	time.Sleep(1 * time.Second)
 
-	cmd := reexec.Command("/sbin/init")
+	cmd := reexec.Command("system_red_namespace")
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -95,7 +109,7 @@ func main() {
 		Cloneflags: unix.CLONE_NEWNS |
 			unix.CLONE_NEWUTS |
 			unix.CLONE_NEWIPC |
-			unix.CLONE_NEWCGROUP |
+			// unix.CLONE_NEWCGROUP |
 			unix.CLONE_NEWPID,
 		// Noctty:     true,
 	}
